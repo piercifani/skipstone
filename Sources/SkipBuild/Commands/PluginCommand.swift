@@ -71,7 +71,7 @@ struct PluginCommand: MessageCommand, ToolOptionsCommand {
             }
             // pin the build engine rather than inheriting the toolchain default, which flipped
             // from `native` to `swiftbuild` in Swift 6.4 (see SwiftBuildSystem and issue #714)
-            if let buildSystem = await SwiftBuildSystem.auto.resolved(swiftCommand: ["xcrun", "swift"]).argumentValue {
+            if let buildSystem = await SwiftBuildSystem.fromEnvironment().resolved(swiftCommand: ["xcrun", "swift"]).argumentValue {
                 prebuildCommand += ["--build-system", buildSystem]
             }
 
