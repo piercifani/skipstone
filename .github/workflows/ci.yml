@@ -175,9 +175,13 @@ jobs:
 
       - run: brew install swiftly
 
+      # `init --skip-install` only sets swiftly up; it installs no toolchain, and it must run for
+      # every variant because `skip doctor` checks swiftly and fails on an uninitialized install
+      # with "Swiftly version: error executing swiftly".
       - run: swiftly init --skip-install --assume-yes --quiet-shell-followup
-        if: matrix.swift-snapshot == ''
 
+      # Variants that pin a snapshot install their toolchain from download.swift.org instead,
+      # since swiftly cannot resolve the 6.4.x branch.
       - run: swiftly install --assume-yes --use ${{ matrix.swift }}
         if: matrix.swift-snapshot == ''
 
@@ -237,16 +241,23 @@ jobs:
           # the Android NDK that the SDK's sysroot is linked against
           brew install --cask android-ndk
 
+          # Install the SDK with the snapshot's own swift rather than Xcode's: the runner's Xcode
+          # can be several releases behind (Xcode 16.4 ships Swift 6.1.2), and an older SwiftPM may
+          # not understand the bundle's swift-sdk.json schema. The install location
+          # (~/Library/org.swift.swiftpm/swift-sdks) is the same either way.
+          SWIFT_6_4="${HOME}/Library/Developer/Toolchains/${SNAPSHOT}.xctoolchain/usr/bin/swift"
+          "${SWIFT_6_4}" --version
+
           curl -fsSL --retry 5 -o swift-android-sdk.tar.gz \
             "https://download.swift.org/${BRANCH}/android-sdk/${SNAPSHOT}/${SNAPSHOT}_android.artifactbundle.tar.gz"
-          swift sdk install swift-android-sdk.tar.gz
+          "${SWIFT_6_4}" sdk install swift-android-sdk.tar.gz
 
           # Unlike the Homebrew cask (whose postflight does this), the downloaded bundle ships
           # without an `ndk-sysroot`; its setup script links one against the local NDK.
           SDK_DIR="${HOME}/Library/org.swift.swiftpm/swift-sdks/${SNAPSHOT}_android.artifactbundle/swift-android"
           ANDROID_NDK_HOME="$(brew --prefix)/share/android-ndk" "${SDK_DIR}/scripts/setup-android-sdk.sh"
 
-          swift sdk list
+          "${SWIFT_6_4}" sdk list
 
       - name: "Install Swift SDK for Android"
         if: matrix.swift-snapshot == ''
