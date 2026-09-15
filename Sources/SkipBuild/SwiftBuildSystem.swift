@@ -69,6 +69,26 @@ enum SwiftBuildSystem: String, CaseIterable, ExpressibleByArgument {
     }
 }
 
+extension SwiftBuildSystem {
+    /// The `--build-system` arguments for a build that targets the host/Darwin, or `[]` when the
+    /// toolchain offers no choice.
+    ///
+    /// These deliberately ignore `SKIP_BUILD_SYSTEM`, which selects the engine for Android
+    /// cross-compilation. A Skip Fuse package graph embeds shared library products such as
+    /// SkipLib and SkipFoundation into several dynamic products at once, which the `swiftbuild`
+    /// engine rejects outright ("is linked as a static library by … This will result in
+    /// duplication of library code") whereas `native` only warned. Until every framework package
+    /// ships the SKIP_DYNAMIC_LIBRARIES support that makes those products dynamic, Apple-platform
+    /// builds must stay on `native`; without this pin they silently switch engines — and start
+    /// failing — the moment the toolchain default changes under them, as it does in Swift 6.4.
+    static func hostBuildArguments(swiftCommand: [String] = ["swift"]) async -> [String] {
+        guard let value = await SwiftBuildSystem.auto.resolved(swiftCommand: swiftCommand).argumentValue else {
+            return []
+        }
+        return ["--build-system", value]
+    }
+}
+
 /// Caches, per `swift` executable, whether `swift build --build-system native` is still accepted.
 actor SwiftBuildSystemProbe {
     static let shared = SwiftBuildSystemProbe()

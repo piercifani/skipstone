@@ -153,7 +153,7 @@ Build and export the Skip modules defined in the Package.swift, with libraries e
             let buildEnvironment = ["SKIP_DYNAMIC_LIBRARIES": "1"]
             if let sdk = try? await fetchSDKPath(), sdk != "legacy" {
                 var buildCommand = ["xcrun", "swift", "build", "-v", "--package-path", project, "--triple", "arm64-apple-ios", "--sdk", sdk]
-                if let buildSystem = await SwiftBuildSystem.fromEnvironment().resolved(swiftCommand: ["xcrun", "swift"]).argumentValue {
+                if let buildSystem = await SwiftBuildSystem.auto.resolved(swiftCommand: ["xcrun", "swift"]).argumentValue {
                     buildCommand += ["--build-system", buildSystem]
                 }
                 try await run(with: out, "Build project \(packageName)", buildCommand, additionalEnvironment: buildEnvironment)
@@ -161,7 +161,7 @@ Build and export the Skip modules defined in the Package.swift, with libraries e
                 // fallback to plain "swift build" for legacy build, which has the down-side that it will build against macOS (and thereby fail when there are iOS-only API calls): "Basics/Triple+Basics.swift:149: Fatal error: Cannot create dynamic libraries for os "ios".", also @availability annotations are required for everything
                 // however, it permits us to build and export against macOS-13/Xcode 15.2 (which is the OS version needed for GitHub CI to be able to run tests against the Android Emulator using the reactivecircus/android-emulator-runner action),
                 var buildCommand = ["swift", "build", "-v", "--package-path", project]
-                if let buildSystem = await SwiftBuildSystem.fromEnvironment().resolved(swiftCommand: ["swift"]).argumentValue {
+                if let buildSystem = await SwiftBuildSystem.auto.resolved(swiftCommand: ["swift"]).argumentValue {
                     buildCommand += ["--build-system", buildSystem]
                 }
                 try await run(with: out, "Build project \(packageName)", buildCommand, additionalEnvironment: buildEnvironment)

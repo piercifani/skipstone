@@ -55,7 +55,7 @@ This command performs a full system checkup to ensure that Skip can create and b
     @Flag(inversion: .prefixedNo, help: ArgumentHelp("Fail immediately when an error occurs"))
     var failFast: Bool = true
 
-    @Option(help: ArgumentHelp("SwiftPM build system for the native Android build", valueName: "auto|native|swiftbuild"))
+    @Option(help: ArgumentHelp("SwiftPM build system for the Android cross-compile (Darwin builds always use native)", valueName: "auto|native|swiftbuild"))
     var buildSystem: SwiftBuildSystem = .fromEnvironment()
 
     @Option(name: [.long], help: ArgumentHelp("Name of checkup project", valueName: "name"))
@@ -110,6 +110,11 @@ This command performs a full system checkup to ensure that Skip can create and b
         // The sample project's Android libraries are cross-compiled by a nested `skip android build`
         // that the generated gradle project launches, so the engine choice is handed down through the
         // environment (see SwiftBuildSystem.environmentKey) rather than as a command argument.
+        //
+        // This applies to the Android cross-compile only. The sample project's Darwin build stays on
+        // `native` regardless (see SwiftBuildSystem.hostBuildArguments), because a Skip Fuse graph
+        // built from released framework versions is rejected by the swiftbuild engine on Apple
+        // platforms.
         if let buildSystemArgument = buildSystem.argumentValue {
             setenv(SwiftBuildSystem.environmentKey, buildSystemArgument, 1)
             await out.write(status: .pass, "Using SwiftPM build system: \(buildSystemArgument)")
