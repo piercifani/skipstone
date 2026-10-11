@@ -2,9 +2,7 @@ name: skipstone CI
 
 on:
   push:
-    branches: [main]
-  schedule:
-    - cron: '0 7 * * *'
+    branches: [main, ci-flake-experiment]
   workflow_dispatch:
   pull_request:
 
@@ -109,11 +107,13 @@ jobs:
       matrix:
         os:
           - 'ubuntu-24.04'
-          - 'macos-15-intel'
           - 'macos-26-intel'
         swift:
-          - '6.3'
           - '6.4'
+        # EXPERIMENT: control = main + #288; lite = AOSP image, 4 GB guest, verifier and animations off
+        variant:
+          - 'control'
+          - 'lite'
         android-api:
           - '28'
           #- '34'
@@ -133,6 +133,11 @@ jobs:
           #- 'r29'
 
     steps:
+      - name: "EXPERIMENT: runner diagnostics"
+        run: |
+          uname -a; (sysctl hw.ncpu hw.memsize 2>/dev/null || nproc; free -g) || true
+          ls -la ~/Library/Caches/org.swift.swiftpm ~/Library/Caches/org.swift.swiftpm/repositories ~/.cache/org.swift.swiftpm 2>&1 || true
+
       - uses: Homebrew/actions/setup-homebrew@main
 
       # The transpiled (Lite) and Fuse framework `swift test` runs execute the Kotlin suite under
@@ -184,7 +189,7 @@ jobs:
       - run: skip doctor
 
       - name: "Create and export new app"
-        if: runner.os != 'Linux'
+        if: false # EXPERIMENT: not emulator related
         working-directory: ${{ runner.temp }}
         run: |
           skip init --transpiled-app --free --appid some.app.id some-app SomeApp SomeAppModel
@@ -221,7 +226,7 @@ jobs:
       #    skip export --debug --ios-sim
 
       - run: skip checkup --native
-        if: runner.os != 'Linux'
+        if: false # EXPERIMENT: not emulator related
         # needs to not be in a directory named "skipstone"
         # https://github.com/skiptools/skipstone/issues/216
         working-directory: ${{ runner.temp }}
@@ -241,12 +246,24 @@ jobs:
           export ANDROID_USER_HOME=$HOME/.android
           export ANDROID_EMULATOR_HOME=$ANDROID_USER_HOME
           export ANDROID_AVD_HOME=$ANDROID_EMULATOR_HOME/avd
-          skip android emulator create --verbose
+          if [[ "${{ matrix.variant }}" == "lite" ]]; then
+            skip android emulator create --verbose --system-image default
+          else
+            skip android emulator create --verbose
+          fi
           skip android emulator list --verbose
-          # watch the logs for errors
-          (sleep 20; ${ANDROID_HOME}/platform-tools/adb logcat) &
+          cat $ANDROID_AVD_HOME/*.avd/config.ini
+          # keep the whole logcat (restarting it if adbd drops) for the failure artifact
+          (sleep 20; while true; do ${ANDROID_HOME}/platform-tools/adb wait-for-device logcat -v threadtime; sleep 1; done > ${RUNNER_TEMP}/logcat.txt 2>&1) &
 
-          skip android emulator launch --background --android-connect-timeout=900 --verbose
+          if [[ "${{ matrix.variant }}" == "lite" ]]; then
+            skip android emulator launch --background --android-connect-timeout=900 --verbose -- -memory 4096 -no-snapshot -no-audio
+            for s in verifier_verify_adb_installs package_verifier_enable window_animation_scale transition_animation_scale animator_duration_scale; do
+              ${ANDROID_HOME}/platform-tools/adb shell settings put global $s 0
+            done
+          else
+            skip android emulator launch --background --android-connect-timeout=900 --verbose
+          fi
 
           echo "Waiting for device"
           ${ANDROID_HOME}/platform-tools/adb wait-for-device
@@ -292,8 +309,8 @@ jobs:
           ANDROID_SERIAL=emulator-5554 swift test
 
       - name: "Test new Skip Fuse framework on emulator"
-        # compile errors on Linux with skip-android-bridge
-        if: runner.os != 'Linux'
+        # EXPERIMENT: run on Linux too to capture the skip-android-bridge compile error
+        continue-on-error: ${{ runner.os == 'Linux' }}
         working-directory: ${{ runner.temp }}
         run: |
           skip init --no-build --native-model --bridged --module-tests demo-fuse-framework DemoFramework
@@ -314,3 +331,18 @@ jobs:
           # Emulator test should fail
           ! ANDROID_SERIAL=emulator-5554 swift test
 
+      - name: "EXPERIMENT: collect diagnostics"
+        if: failure() || runner.os == 'Linux'
+        run: |
+          # skip log names contain ':', which upload-artifact rejects
+          mkdir -p ${RUNNER_TEMP}/diag
+          cp ${RUNNER_TEMP}/logcat.txt ${RUNNER_TEMP}/diag/ || true
+          for f in /tmp/skip-*.txt; do [ -e "$f" ] && cp "$f" "${RUNNER_TEMP}/diag/$(basename "$f" | tr ':' '-')"; done; true
+
+      - name: "EXPERIMENT: upload diagnostics"
+        if: failure() || runner.os == 'Linux'
+        uses: actions/upload-artifact@v7
+        with:
+          name: diag-${{ matrix.os }}-${{ matrix.variant }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/diag
+          if-no-files-found: ignore
